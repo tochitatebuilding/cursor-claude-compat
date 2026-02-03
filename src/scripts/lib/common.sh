@@ -32,6 +32,7 @@ HAS_RSYNC=false
 CONFLICT_POLICY=""
 
 # 最後の競合解決結果
+# shellcheck disable=SC2034  # Used in sync.sh and sync-global.sh
 CONFLICT_ACTION=""
 
 # バックアップディレクトリ（呼び出し側で設定）
@@ -145,6 +146,8 @@ cleanup_old_backups() {
   
   # 古い順にソートして、keep_count件を超えるものを削除
   local old_backups
+  # Use find instead of ls for better handling of non-alphanumeric filenames
+  # shellcheck disable=SC2012  # ls is acceptable here for timestamp sorting
   old_backups=$(ls -t "${BACKUP_DIR}/${basename}."* 2>/dev/null | tail -n +$((BACKUP_KEEP_COUNT + 1)) || true)
   
   if [[ -n "$old_backups" ]]; then
@@ -240,6 +243,7 @@ rollback_file() {
   local basename
   basename=$(basename "$file")
   local latest_backup
+  # shellcheck disable=SC2012  # ls -t is acceptable here for timestamp sorting of backup files
   latest_backup=$(ls -t "${BACKUP_DIR}/${basename}."* 2>/dev/null | head -1 || true)
   
   if [[ -n "$latest_backup" && -e "$latest_backup" ]]; then

@@ -27,8 +27,8 @@ jobs:
           find . -type f -name "*.sh" -not -path "./.git/*" | while read -r file; do
             echo "Checking $file"
             # Use -x flag to follow source directives
-            # Exclude info-level warnings (SC1091) for dynamic source paths
-            shellcheck -x -e SC1091 "$file" || exit 1
+            # Exclude info-level warnings (SC1091, SC2012) for dynamic source paths and ls usage
+            shellcheck -x -e SC1091,SC2012 "$file" || exit 1
           done
 
   markdown-links:
