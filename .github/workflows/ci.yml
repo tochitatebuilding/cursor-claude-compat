@@ -26,7 +26,8 @@ jobs:
         run: |
           find . -type f -name "*.sh" -not -path "./.git/*" | while read -r file; do
             echo "Checking $file"
-            shellcheck "$file" || exit 1
+            # Use -x flag to follow source directives
+            shellcheck -x "$file" || exit 1
           done
 
   markdown-links:

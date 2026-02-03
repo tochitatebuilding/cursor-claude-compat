@@ -16,11 +16,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # 共通ライブラリを読み込み
 if [[ -f "${SCRIPT_DIR}/lib/common.sh" ]]; then
+  # shellcheck source=lib/common.sh
   source "${SCRIPT_DIR}/lib/common.sh"
 else
   # フォールバック: インストール先から読み込み
   INSTALLED_LIB="${HOME}/.cursor/skills-cursor/sync-claude-docs/lib/common.sh"
   if [[ -f "$INSTALLED_LIB" ]]; then
+    # shellcheck source=/dev/null
     source "$INSTALLED_LIB"
   else
     echo "Error: common.sh が見つかりません" >&2
