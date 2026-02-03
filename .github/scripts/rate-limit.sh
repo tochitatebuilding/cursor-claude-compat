@@ -13,7 +13,6 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CACHE_DIR="${CACHE_DIR:-/tmp/rate-limit-cache}"
 CACHE_KEY_PREFIX="rate-limit"
 
@@ -102,8 +101,9 @@ write_count() {
     init_cache_file "$cache_file"
     
     if command -v jq >/dev/null 2>&1; then
-        jq --argjson count "$count" --argjson limit "$limit" \
-           '.count = $count | .last_reset = '$(get_timestamp)' | .limit = $limit' \
+        TIMESTAMP=$(get_timestamp)
+        jq --argjson count "$count" --argjson limit "$limit" --argjson timestamp "$TIMESTAMP" \
+           '.count = $count | .last_reset = $timestamp | .limit = $limit' \
            "$cache_file" > "${cache_file}.tmp" && mv "${cache_file}.tmp" "$cache_file"
     else
         # Fallback: simple sed (less reliable)
