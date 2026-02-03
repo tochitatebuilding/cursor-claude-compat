@@ -33,7 +33,7 @@ CONFLICT_POLICY=""
 
 # 最後の競合解決結果
 # shellcheck disable=SC2034  # Used in sync.sh and sync-global.sh
-CONFLICT_ACTION=""
+export CONFLICT_ACTION=""
 
 # バックアップディレクトリ（呼び出し側で設定）
 BACKUP_DIR=""
@@ -271,10 +271,10 @@ rollback_file() {
 # 競合時の対話確認 + 「以降すべて」オプション
 # 結果は CONFLICT_ACTION に設定される
 # 戻り値: "backup", "skip", "all_backup", "all_skip"
+# shellcheck disable=SC2034  # CONFLICT_ACTION is used in sync.sh and sync-global.sh
 resolve_conflict() {
   local file="$1"
   
-  # shellcheck disable=SC2034  # CONFLICT_ACTION is used in sync.sh and sync-global.sh
   # オプションの優先順位チェック
   # --force > --skip-existing > --yes > 対話
   if [[ "$FORCE" == "true" ]]; then
