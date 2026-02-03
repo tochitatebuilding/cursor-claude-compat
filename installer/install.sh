@@ -60,7 +60,8 @@ main() {
   
   # 既存のバックアップ
   if [[ -d "$skill_target" ]]; then
-    local backup="${skill_target}.backup.$(date +%Y%m%d%H%M%S)"
+    local backup
+    backup="${skill_target}.backup.$(date +%Y%m%d%H%M%S)"
     log_warn "既存のスキルをバックアップ: $backup"
     mv "$skill_target" "$backup"
   fi
@@ -115,7 +116,8 @@ main() {
   
   # 既存のバックアップ
   if [[ -f "$rule_target" ]]; then
-    local backup="${rule_target}.backup.$(date +%Y%m%d%H%M%S)"
+    local backup
+    backup="${rule_target}.backup.$(date +%Y%m%d%H%M%S)"
     log_warn "既存のルールをバックアップ: $backup"
     mv "$rule_target" "$backup"
   fi
