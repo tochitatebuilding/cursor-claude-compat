@@ -338,8 +338,11 @@ convert_rule_to_cursor() {
   basename=$(basename "$source_file" .md)
   
   # ファイル名からglobsを推測
+  # Note: Order matters - more specific patterns should come first
+  # json must come before javascript to avoid matching "json" in "javascript"
   local globs='["**/*"]'
   case "$basename" in
+    *json*) globs='["**/*.json"]' ;;
     *typescript*|*ts*) globs='["**/*.ts", "**/*.tsx"]' ;;
     *javascript*|*js*) globs='["**/*.js", "**/*.jsx"]' ;;
     *python*|*py*) globs='["**/*.py"]' ;;
@@ -347,7 +350,6 @@ convert_rule_to_cursor() {
     *react*) globs='["**/*.tsx", "**/*.jsx"]' ;;
     *css*|*style*) globs='["**/*.css", "**/*.scss"]' ;;
     *html*) globs='["**/*.html"]' ;;
-    *json*) globs='["**/*.json"]' ;;
     *yaml*|*yml*) globs='["**/*.yaml", "**/*.yml"]' ;;
     *markdown*|*md*) globs='["**/*.md"]' ;;
   esac
