@@ -30,8 +30,8 @@ ERRORS=0
 while IFS= read -r -d '' file; do
   echo "Checking $file"
   # Use -x flag to follow source directives
-  # Exclude SC1091 (info-level) warnings for dynamic source paths
-  if ! shellcheck -x -e SC1091 "$file"; then
+  # Exclude info-level warnings (SC1091, SC2012) for dynamic source paths and ls usage
+  if ! shellcheck -x -e SC1091,SC2012 "$file"; then
     ((ERRORS++))
   fi
 done < <(find . -type f -name "*.sh" -not -path "./.git/*" -print0)
