@@ -274,6 +274,7 @@ rollback_file() {
 resolve_conflict() {
   local file="$1"
   
+  # shellcheck disable=SC2034  # CONFLICT_ACTION is used in sync.sh and sync-global.sh
   # オプションの優先順位チェック
   # --force > --skip-existing > --yes > 対話
   if [[ "$FORCE" == "true" ]]; then
