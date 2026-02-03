@@ -1,0 +1,18 @@
+# CODEOWNERS file for Cursor-Claude Compat
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Global owners
+* @tochitatebuilding/maintainers
+
+# Critical files - require maintainer review
+/.github/workflows/ @tochitatebuilding/maintainers
+/installer/ @tochitatebuilding/maintainers
+/src/scripts/ @tochitatebuilding/maintainers
+
+# Documentation
+/*.md @tochitatebuilding/maintainers
+/docs/ @tochitatebuilding/maintainers
+
+# Configuration files
+/.github/ @tochitatebuilding/maintainers
+/LICENSE @tochitatebuilding/maintainers

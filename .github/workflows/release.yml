@@ -1,0 +1,197 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG_NAME#v}
+          echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Tag: $TAG_NAME, Version: $VERSION"
+      
+      - name: Validate semantic version
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+)?$'; then
+            echo "Error: Invalid semantic version format: $VERSION"
+            echo "Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD]"
+            exit 1
+          fi
+          echo "Version format is valid: $VERSION"
+      
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          TAG_NAME="${{ steps.version.outputs.tag }}"
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "No previous tag found. Generating initial release notes."
+            RELEASE_NOTES="# Release $TAG_NAME
+          
+          Initial release of Cursor-Claude Compat.
+          
+          ## Features
+          - Project-level synchronization between Claude Code and Cursor
+          - Global configuration synchronization
+          - Comprehensive documentation and contribution guidelines
+          "
+          else
+            echo "Generating release notes from $PREVIOUS_TAG to $TAG_NAME"
+            
+            # Extract commits between tags
+            COMMITS=$(git log --pretty=format:"- %s (%h)" ${PREVIOUS_TAG}..${TAG_NAME})
+            
+            # Categorize commits
+            FEATURES=$(echo "$COMMITS" | grep -iE "^(feat|feature|add)" || true)
+            FIXES=$(echo "$COMMITS" | grep -iE "^(fix|bug)" || true)
+            DOCS=$(echo "$COMMITS" | grep -iE "^(docs|doc)" || true)
+            REFACTOR=$(echo "$COMMITS" | grep -iE "^(refactor|chore)" || true)
+            OTHER=$(echo "$COMMITS" | grep -vE "^(feat|feature|add|fix|bug|docs|doc|refactor|chore)" || true)
+            
+            RELEASE_NOTES="# Release $TAG_NAME
+          
+          ## Changes since $PREVIOUS_TAG
+          
+          "
+          
+            if [ -n "$FEATURES" ]; then
+              RELEASE_NOTES+="### Added
+          $FEATURES
+          
+          "
+            fi
+            
+            if [ -n "$FIXES" ]; then
+              RELEASE_NOTES+="### Fixed
+          $FIXES
+          
+          "
+            fi
+            
+            if [ -n "$DOCS" ]; then
+              RELEASE_NOTES+="### Documentation
+          $DOCS
+          
+          "
+            fi
+            
+            if [ -n "$REFACTOR" ]; then
+              RELEASE_NOTES+="### Changed
+          $REFACTOR
+          
+          "
+            fi
+            
+            if [ -n "$OTHER" ]; then
+              RELEASE_NOTES+="### Other
+          $OTHER
+          
+          "
+            fi
+          fi
+          
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$RELEASE_NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Release ${{ steps.version.outputs.tag }}
+          body: ${{ steps.release_notes.outputs.notes }}
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Update CHANGELOG.md
+        run: |
+          TAG_NAME="${{ steps.version.outputs.tag }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          DATE=$(date -u +%Y-%m-%d)
+          
+          # Extract release notes (remove markdown header)
+          RELEASE_NOTES="${{ steps.release_notes.outputs.notes }}"
+          RELEASE_NOTES_BODY=$(echo "$RELEASE_NOTES" | sed '1d' | sed 's/^## /### /')
+          
+          # Create new changelog entry
+          CHANGELOG_ENTRY="## [$VERSION] - $DATE
+          
+          $RELEASE_NOTES_BODY"
+          
+          # Insert after [Unreleased] section
+          if [ -f CHANGELOG.md ]; then
+            # Find the line number after [Unreleased] section
+            LINE_NUM=$(grep -n "^## \[Unreleased\]" CHANGELOG.md | cut -d: -f1)
+            if [ -n "$LINE_NUM" ]; then
+              # Insert new version entry using a temporary file
+              TMP_FILE=$(mktemp)
+              head -n "$LINE_NUM" CHANGELOG.md > "$TMP_FILE"
+              echo "" >> "$TMP_FILE"
+              echo "$CHANGELOG_ENTRY" >> "$TMP_FILE"
+              tail -n +$((LINE_NUM + 1)) CHANGELOG.md >> "$TMP_FILE"
+              mv "$TMP_FILE" CHANGELOG.md
+              
+              # Update [Unreleased] link
+              sed -i "s|^\[Unreleased\]:.*|[Unreleased]: https://github.com/tochitatebuilding/cursor-claude-compat/compare/${TAG_NAME}...HEAD|" CHANGELOG.md
+              
+              # Add new version link if not exists
+              if ! grep -q "^\[$VERSION\]:" CHANGELOG.md; then
+                sed -i "/^\[Unreleased\]:/a[$VERSION]: https://github.com/tochitatebuilding/cursor-claude-compat/releases/tag/${TAG_NAME}" CHANGELOG.md
+              fi
+            else
+              # If [Unreleased] not found, prepend to file
+              echo -e "$CHANGELOG_ENTRY\n\n$(cat CHANGELOG.md)" > CHANGELOG.md
+            fi
+          else
+            # Create new CHANGELOG.md
+            {
+              echo "# Changelog"
+              echo ""
+              echo "All notable changes to this project will be documented in this file."
+              echo ""
+              echo "The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),"
+              echo "and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)."
+              echo ""
+              echo "## [Unreleased]"
+              echo ""
+              echo "$CHANGELOG_ENTRY"
+              echo ""
+              echo "[Unreleased]: https://github.com/tochitatebuilding/cursor-claude-compat/compare/${TAG_NAME}...HEAD"
+              echo "[$VERSION]: https://github.com/tochitatebuilding/cursor-claude-compat/releases/tag/${TAG_NAME}"
+            } > CHANGELOG.md
+          fi
+      
+      - name: Commit CHANGELOG.md update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          if git diff --staged --quiet; then
+            echo "No changes to CHANGELOG.md"
+          else
+            git commit -m "chore: update CHANGELOG.md for ${{ steps.version.outputs.tag }}"
+            git push
+          fi

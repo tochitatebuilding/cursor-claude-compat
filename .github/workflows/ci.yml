@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  shellcheck:
+    name: Shell Script Linting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+      
+      - name: Run shellcheck
+        run: |
+          find . -type f -name "*.sh" -not -path "./.git/*" | while read -r file; do
+            echo "Checking $file"
+            shellcheck "$file" || exit 1
+          done
+
+  markdown-links:
+    name: Markdown Link Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install markdown-link-check
+        run: npm install -g markdown-link-check
+      
+      - name: Check markdown links
+        run: |
+          if [ -f .github/markdown-link-check-config.json ]; then
+            CONFIG_FLAG="--config .github/markdown-link-check-config.json"
+          else
+            CONFIG_FLAG=""
+          fi
+          find . -type f -name "*.md" -not -path "./.git/*" -not -path "./node_modules/*" | while read -r file; do
+            echo "Checking links in $file"
+            markdown-link-check "$file" $CONFIG_FLAG || true
+          done
+        continue-on-error: true
+
+  secret-scan:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  syntax-check:
+    name: Script Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Check bash syntax
+        run: |
+          find . -type f -name "*.sh" -not -path "./.git/*" | while read -r file; do
+            echo "Checking syntax of $file"
+            bash -n "$file" || exit 1
+          done
+
+  file-structure:
+    name: File Structure Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Validate file structure
+        run: |
+          # Check required files exist
+          test -f README.md || (echo "README.md missing" && exit 1)
+          test -f LICENSE || (echo "LICENSE missing" && exit 1)
+          test -f CONTRIBUTING.md || (echo "CONTRIBUTING.md missing" && exit 1)
+          test -f SECURITY.md || (echo "SECURITY.md missing" && exit 1)
+          test -f CODE_OF_CONDUCT.md || (echo "CODE_OF_CONDUCT.md missing" && exit 1)
+          
+          # Check installer scripts exist
+          test -f installer/install.sh || (echo "installer/install.sh missing" && exit 1)
+          test -f installer/uninstall.sh || (echo "installer/uninstall.sh missing" && exit 1)
+          
+          echo "File structure validation passed"

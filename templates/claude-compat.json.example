@@ -1,0 +1,19 @@
+{
+  "version": "1",
+  "source": {
+    "plans": "docs/plans",
+    "skills": "docs/skills",
+    "rules": "docs/rules"
+  },
+  "target": {
+    "plans": ".cursor/plans",
+    "skills": ".cursor/skills",
+    "rules": ".cursor/rules"
+  },
+  "syncMethod": {
+    "plans": "symlink",
+    "skills": "symlink",
+    "rules": "convert"
+  },
+  "lastSync": "2026-02-03T12:00:00+09:00"
+}
