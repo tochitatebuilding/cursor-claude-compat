@@ -126,6 +126,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
+      - name: Checkout main branch for CHANGELOG update
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
       - name: Update CHANGELOG.md
         run: |
           TAG_NAME="${{ steps.version.outputs.tag }}"
@@ -193,5 +199,5 @@ jobs:
             echo "No changes to CHANGELOG.md"
           else
             git commit -m "chore: update CHANGELOG.md for ${{ steps.version.outputs.tag }}"
-            git push
+            git push origin main
           fi
