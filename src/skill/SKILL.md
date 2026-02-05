@@ -2,18 +2,22 @@
 
 ## Purpose
 
-Claude Code用の `docs/plans/`, `docs/skills/`, `docs/rules/` を `.cursor/` 配下に同期し、CursorとClaude Codeの両方からアクセス可能にします。
+Claude Code用の `docs/plans/`, `docs/skills/`, `docs/rules/` を `.cursor/` 配下に同期し、CursorとClaude Codeの両方からアクセス可能にします。また、`.mcp.json` のMCPサーバー設定を `.cursor/mcp.json` に安全マージします。
 
 ## Preconditions
 
 - プロジェクトに Claude Code 用のドキュメントディレクトリが存在する
-  - `docs/plans/` または `.claude/plans/`
-  - `docs/skills/` または `.claude/skills/`
-  - `docs/rules/` または `.claude/rules/`
+  - `docs/plans/`
+  - `docs/skills/`
+  - `docs/rules/`
+- または `.mcp.json` が存在する
+
+注意: `.claude/plans/`, `.claude/skills/`, `.claude/rules/` は Cursor がネイティブで読み取るため、同期の対象外です。
 
 ## When to Use
 
 - Claude Code用に `docs/` 配下に plans/skills/rules を配置したプロジェクトで、Cursorからも参照したい場合
+- `.mcp.json` のMCPサーバー設定をCursorでも使いたい場合
 - `/sync-claude-docs` コマンドで呼び出し
 
 ## Steps
@@ -32,7 +36,7 @@ Claude Code用の `docs/plans/`, `docs/skills/`, `docs/rules/` を `.cursor/` �
 
 1. **ディレクトリの自動検出**
    - `docs/plans`, `docs/skills`, `docs/rules`
-   - `.claude/plans`, `.claude/skills`, `.claude/rules`
+   - `.mcp.json`
 
 2. **確認プロンプト**
    - 検出された設定で続行するか確認
@@ -58,7 +62,7 @@ rsync -av --delete docs/skills/ .cursor/skills/
 
 **rules の同期（形式変換）**:
 
-Claude形式（純粋Markdown）から Cursor形式（.mdc）に変換してコピーします。
+Claude形式（純粋Markdown）から Cursor形式（frontmatter付き）に変換してコピーします。サブディレクトリも再帰的に処理されます。
 
 入力（`docs/rules/japanese-response.md`）:
 ```markdown
@@ -80,6 +84,13 @@ alwaysApply: false
 すべての応答は日本語で行ってください。
 ```
 
+**MCP の同期（安全マージ）**:
+
+`.mcp.json` の `mcpServers` を `.cursor/mcp.json` にマージします:
+- 既存の Cursor 設定は保持（競合時は既存優先）
+- Claude 固有フィールド（`type`, `envFile`, `oauth`, `disabledTools`）は自動除去
+- jq が必要（インストールされていない場合はスキップ）
+
 ## オプション
 
 ```bash
@@ -100,17 +111,20 @@ alwaysApply: false
   "source": {
     "plans": "docs/plans",
     "skills": "docs/skills",
-    "rules": "docs/rules"
+    "rules": "docs/rules",
+    "mcp": ".mcp.json"
   },
   "target": {
     "plans": ".cursor/plans",
     "skills": ".cursor/skills",
-    "rules": ".cursor/rules"
+    "rules": ".cursor/rules",
+    "mcp": ".cursor/mcp.json"
   },
   "syncMethod": {
     "plans": "symlink",
     "skills": "symlink",
-    "rules": "convert"
+    "rules": "convert",
+    "mcp": "merge"
   }
 }
 ```
@@ -123,12 +137,14 @@ alwaysApply: false
 | シンボリックリンクが機能しない | Windows環境 | 自動でコピー方式にフォールバック |
 | Cursorが認識しない | 設定ファイルが壊れている | `.cursor/claude-compat.json` を削除して再実行 |
 | ルールが反映されない | 形式変換エラー | `.cursor/rules/` の内容を確認 |
+| MCP同期がスキップされる | jq未インストール | `sudo apt install jq` |
 
 ## Notes
 
 - **マスターは docs/ 側**: 編集は `docs/` 配下で行い、同期で `.cursor/` に反映
 - **Git管理**: `.cursor/` は `.gitignore` に含めることで、同期結果はコミットされない
 - **定期同期**: Cursorの自動タスク機能でフォルダオープン時にチェック可能（オプション）
+- **MCP の安全性**: 競合時は既存の Cursor 設定を優先（意図しない上書きを防止）
 
 ## Related
 

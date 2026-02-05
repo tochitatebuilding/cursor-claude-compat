@@ -37,6 +37,10 @@ else
   fi
 fi
 
+# MCP 関連変数
+SOURCE_MCP=""
+TARGET_MCP=".cursor/mcp.json"
+
 # =============================================================================
 # 設定ファイル操作
 # =============================================================================
@@ -46,24 +50,31 @@ load_config() {
   if [[ ! -f "$CONFIG_FILE" ]]; then
     return 1
   fi
-  
+
   if [[ "$HAS_JQ" == "true" ]]; then
     SOURCE_PLANS=$(json_get "$CONFIG_FILE" '.source.plans')
     SOURCE_SKILLS=$(json_get "$CONFIG_FILE" '.source.skills')
     SOURCE_RULES=$(json_get "$CONFIG_FILE" '.source.rules')
+    SOURCE_MCP=$(json_get "$CONFIG_FILE" '.source.mcp')
     TARGET_PLANS=$(json_get "$CONFIG_FILE" '.target.plans' '.cursor/plans')
     TARGET_SKILLS=$(json_get "$CONFIG_FILE" '.target.skills' '.cursor/skills')
     TARGET_RULES=$(json_get "$CONFIG_FILE" '.target.rules' '.cursor/rules')
+    TARGET_MCP=$(json_get "$CONFIG_FILE" '.target.mcp' '.cursor/mcp.json')
   else
     # jqがない場合はgrepで簡易パース
-    SOURCE_PLANS=$(grep -oP '"plans"\s*:\s*"\K[^"]+' "$CONFIG_FILE" 2>/dev/null | head -1 || true)
-    SOURCE_SKILLS=$(grep -oP '"skills"\s*:\s*"\K[^"]+' "$CONFIG_FILE" 2>/dev/null | head -1 || true)
-    SOURCE_RULES=$(grep -oP '"rules"\s*:\s*"\K[^"]+' "$CONFIG_FILE" 2>/dev/null | head -1 || true)
+    # source ブロック内の値のみを取得するため、行番号ベースで制限
+    local source_block
+    source_block=$(sed -n '/"source"/,/}/p' "$CONFIG_FILE" 2>/dev/null || true)
+    SOURCE_PLANS=$(echo "$source_block" | grep -oP '"plans"\s*:\s*"\K[^"]+' 2>/dev/null | head -1 || true)
+    SOURCE_SKILLS=$(echo "$source_block" | grep -oP '"skills"\s*:\s*"\K[^"]+' 2>/dev/null | head -1 || true)
+    SOURCE_RULES=$(echo "$source_block" | grep -oP '"rules"\s*:\s*"\K[^"]+' 2>/dev/null | head -1 || true)
+    SOURCE_MCP=$(echo "$source_block" | grep -oP '"mcp"\s*:\s*"\K[^"]+' 2>/dev/null | head -1 || true)
     TARGET_PLANS=".cursor/plans"
     TARGET_SKILLS=".cursor/skills"
     TARGET_RULES=".cursor/rules"
+    TARGET_MCP=".cursor/mcp.json"
   fi
-  
+
   return 0
 }
 
@@ -74,55 +85,105 @@ save_config() {
   local rules_dir="$3"
   local sync_method="$4"
   local status="${5:-success}"
-  
+
   mkdir -p "$(dirname "$CONFIG_FILE")"
-  
+
   cat > "$CONFIG_FILE" << EOF
 {
   "version": "$VERSION",
   "source": {
     "plans": "$plans_dir",
     "skills": "$skills_dir",
-    "rules": "$rules_dir"
+    "rules": "$rules_dir",
+    "mcp": "$SOURCE_MCP"
   },
   "target": {
     "plans": ".cursor/plans",
     "skills": ".cursor/skills",
-    "rules": ".cursor/rules"
+    "rules": ".cursor/rules",
+    "mcp": "$TARGET_MCP"
   },
   "syncMethod": {
     "plans": "$sync_method",
     "skills": "$sync_method",
-    "rules": "convert"
+    "rules": "convert",
+    "mcp": "merge"
   },
   "lastSync": "$(date -Iseconds)",
   "lastSyncStatus": "$status"
 }
 EOF
-  
+
   log_success "設定ファイルを保存: $CONFIG_FILE"
 }
 
 # 設定の参照先が有効かチェック
 validate_config() {
   local valid=true
-  
+
   if [[ -n "$SOURCE_PLANS" ]] && [[ ! -d "$SOURCE_PLANS" ]]; then
     log_warn "plans ディレクトリが見つかりません: $SOURCE_PLANS"
     valid=false
   fi
-  
+
   if [[ -n "$SOURCE_SKILLS" ]] && [[ ! -d "$SOURCE_SKILLS" ]]; then
     log_warn "skills ディレクトリが見つかりません: $SOURCE_SKILLS"
     valid=false
   fi
-  
+
   if [[ -n "$SOURCE_RULES" ]] && [[ ! -d "$SOURCE_RULES" ]]; then
     log_warn "rules ディレクトリが見つかりません: $SOURCE_RULES"
     valid=false
   fi
-  
+
   [[ "$valid" == "true" ]]
+}
+
+# =============================================================================
+# 自動セットアップ（非対話モード用）
+# =============================================================================
+run_auto_setup() {
+  log_info "Claude Code ドキュメントディレクトリを自動検出中..."
+
+  local plans_dir="" skills_dir="" rules_dir=""
+
+  for dir in docs/plans docs/skills docs/rules; do
+    if [[ -d "$dir" ]]; then
+      case "$dir" in
+        *plans*) plans_dir="$dir" ;;
+        *skills*) skills_dir="$dir" ;;
+        *rules*) rules_dir="$dir" ;;
+      esac
+    fi
+  done
+
+  # .mcp.json の自動検出
+  if [[ -f ".mcp.json" ]]; then
+    SOURCE_MCP=".mcp.json"
+    log_success ".mcp.json を検出しました"
+  fi
+
+  if [[ -z "$plans_dir" && -z "$skills_dir" && -z "$rules_dir" && -z "$SOURCE_MCP" ]]; then
+    log_error "同期元が見つかりません（docs/plans, docs/skills, docs/rules, .mcp.json）"
+    exit 1
+  fi
+
+  # 同期方式を決定
+  local sync_method="symlink"
+  if ! check_symlink_support; then
+    sync_method="copy"
+  fi
+
+  # 設定を保存
+  save_config "$plans_dir" "$skills_dir" "$rules_dir" "$sync_method"
+
+  # グローバル変数を更新
+  SOURCE_PLANS="$plans_dir"
+  SOURCE_SKILLS="$skills_dir"
+  SOURCE_RULES="$rules_dir"
+  TARGET_PLANS=".cursor/plans"
+  TARGET_SKILLS=".cursor/skills"
+  TARGET_RULES=".cursor/rules"
 }
 
 # =============================================================================
@@ -132,26 +193,27 @@ run_interactive_setup() {
   echo ""
   log_info "Claude Code ドキュメントディレクトリを検出中..."
   echo ""
-  
+
   # 候補ディレクトリを検索
-  local candidates=("docs/plans" "docs/skills" "docs/rules" ".claude/plans" ".claude/skills" ".claude/rules")
+  # Note: .claude/ 配下は Cursor がネイティブで読むため、候補から除外
+  local candidates=("docs/plans" "docs/skills" "docs/rules")
   local found=()
-  
+
   for dir in "${candidates[@]}"; do
     if [[ -d "$dir" ]]; then
       found+=("$dir")
     fi
   done
-  
+
   local plans_dir=""
   local skills_dir=""
   local rules_dir=""
-  
+
   if [[ ${#found[@]} -gt 0 ]]; then
     echo "以下のディレクトリが見つかりました:"
     printf '  - %s\n' "${found[@]}"
     echo ""
-    
+
     # 自動検出を試行
     for dir in "${found[@]}"; do
       case "$dir" in
@@ -160,13 +222,13 @@ run_interactive_setup() {
         *rules*) [[ -z "$rules_dir" ]] && rules_dir="$dir" ;;
       esac
     done
-    
+
     echo "検出された設定:"
     echo "  plans:  ${plans_dir:-（なし）}"
     echo "  skills: ${skills_dir:-（なし）}"
     echo "  rules:  ${rules_dir:-（なし）}"
     echo ""
-    
+
     read -rp "この設定で続行しますか? [Y/n]: " confirm
     if [[ "$confirm" =~ ^[Nn] ]]; then
       plans_dir=""
@@ -174,7 +236,7 @@ run_interactive_setup() {
       rules_dir=""
     fi
   fi
-  
+
   # 手動入力
   if [[ -z "$plans_dir" && -z "$skills_dir" && -z "$rules_dir" ]]; then
     echo ""
@@ -183,13 +245,20 @@ run_interactive_setup() {
     read -rp "  skills ディレクトリ: " skills_dir
     read -rp "  rules ディレクトリ: " rules_dir
   fi
-  
-  # 少なくとも1つは必要
-  if [[ -z "$plans_dir" && -z "$skills_dir" && -z "$rules_dir" ]]; then
+
+  # .mcp.json の自動検出
+  if [[ -f ".mcp.json" ]]; then
+    echo ""
+    log_success ".mcp.json を検出しました"
+    SOURCE_MCP=".mcp.json"
+  fi
+
+  # 少なくとも1つは必要（plans/skills/rules or MCP）
+  if [[ -z "$plans_dir" && -z "$skills_dir" && -z "$rules_dir" && -z "$SOURCE_MCP" ]]; then
     log_error "同期元ディレクトリが指定されていません"
     exit 1
   fi
-  
+
   # 存在確認
   for dir in "$plans_dir" "$skills_dir" "$rules_dir"; do
     if [[ -n "$dir" && ! -d "$dir" ]]; then
@@ -197,17 +266,17 @@ run_interactive_setup() {
       exit 1
     fi
   done
-  
+
   # 同期方式を決定
   local sync_method="symlink"
   if ! check_symlink_support; then
     log_warn "シンボリックリンクが使用できません。コピー方式を使用します。"
     sync_method="copy"
   fi
-  
+
   # 設定を保存
   save_config "$plans_dir" "$skills_dir" "$rules_dir" "$sync_method"
-  
+
   # グローバル変数を更新
   SOURCE_PLANS="$plans_dir"
   SOURCE_SKILLS="$skills_dir"
@@ -226,11 +295,11 @@ sync_directory() {
   local source="$1"
   local target="$2"
   local method="$3"
-  
+
   if [[ -z "$source" || ! -d "$source" ]]; then
     return 0
   fi
-  
+
   # 既存ターゲットの処理
   if [[ -e "$target" ]]; then
     if [[ -L "$target" ]]; then
@@ -244,12 +313,12 @@ sync_directory() {
     elif [[ -d "$target" ]]; then
       # ディレクトリの場合は競合解決
       resolve_conflict "$target"
-      
+
       if [[ "$CONFLICT_ACTION" == "skip" ]]; then
         log_info "スキップ: $target"
         return 0
       fi
-      
+
       if [[ "$DRY_RUN" == "true" ]]; then
         log_info "[DRY-RUN] バックアップ後削除: $target"
       else
@@ -258,15 +327,15 @@ sync_directory() {
       fi
     fi
   fi
-  
+
   # 親ディレクトリ作成
   mkdir -p "$(dirname "$target")"
-  
+
   if [[ "$DRY_RUN" == "true" ]]; then
     log_info "[DRY-RUN] $method: $source -> $target"
     return 0
   fi
-  
+
   if [[ "$method" == "symlink" ]] && check_symlink_support; then
     # 相対パスでシンボリックリンク作成
     local relative_source
@@ -280,48 +349,49 @@ sync_directory() {
   fi
 }
 
-# ルールを変換して同期
+# ルールを変換して同期（再帰的にサブディレクトリも処理）
 sync_rules() {
   local source="$1"
   local target="$2"
-  
+
   if [[ -z "$source" || ! -d "$source" ]]; then
     return 0
   fi
-  
+
   if [[ "$DRY_RUN" == "true" ]]; then
     log_info "[DRY-RUN] ルール変換: $source -> $target"
     return 0
   fi
-  
+
   # 既存ターゲットの処理
   if [[ -d "$target" ]]; then
     resolve_conflict "$target"
-    
+
     if [[ "$CONFLICT_ACTION" == "skip" ]]; then
       log_info "スキップ: $target"
       return 0
     fi
-    
+
     backup_directory "$target"
     rm -rf "$target"
   fi
-  
+
   mkdir -p "$target"
-  
-  # 各ファイルを変換
+
+  # 再帰的に .md ファイルを検索して変換
   local count=0
-  for source_file in "$source"/*.md; do
-    [[ -f "$source_file" ]] || continue
-    
-    local basename
-    basename=$(basename "$source_file")
-    local target_file="$target/$basename"
-    
+  while IFS= read -r -d '' source_file; do
+    # ソースからの相対パスを計算
+    local relative_path="${source_file#"$source"/}"
+    local target_file="$target/$relative_path"
+
+    # サブディレクトリが必要なら作成
+    mkdir -p "$(dirname "$target_file")"
+
     convert_rule_to_cursor "$source_file" "$target_file"
     ((count++))
-  done
-  
+  done < <(find "$source" -name "*.md" -type f -print0)
+
   if [[ $count -gt 0 ]]; then
     log_success "ルール変換完了: $count ファイル ($source -> $target)"
   else
@@ -333,10 +403,10 @@ sync_rules() {
 convert_rule_to_cursor() {
   local source_file="$1"
   local target_file="$2"
-  
+
   local basename
   basename=$(basename "$source_file" .md)
-  
+
   # ファイル名からglobsを推測
   # Note: Order matters - more specific patterns should come first
   # json must come before javascript to avoid matching "json" in "javascript"
@@ -353,22 +423,119 @@ convert_rule_to_cursor() {
     *yaml*|*yml*) globs='["**/*.yaml", "**/*.yml"]' ;;
     *markdown*|*md*) globs='["**/*.md"]' ;;
   esac
-  
+
   # 最初の見出しからdescriptionを抽出
   local first_heading
   first_heading=$(grep -m1 '^#' "$source_file" 2>/dev/null | sed 's/^#* *//' || echo "")
   local description="${first_heading:-$basename}"
-  
+
+  # YAML エスケープ（特殊文字対策）
+  local escaped_description
+  escaped_description=$(yaml_escape "$description")
+
   # frontmatterを生成してファイルを出力
   {
     echo "---"
-    echo "description: $description"
+    echo "description: $escaped_description"
     echo "globs: $globs"
     echo "alwaysApply: false"
     echo "---"
     echo ""
     cat "$source_file"
   } > "$target_file"
+}
+
+# プロジェクトレベル MCP 同期
+sync_mcp() {
+  if [[ -z "$SOURCE_MCP" || ! -f "$SOURCE_MCP" ]]; then
+    return 0
+  fi
+
+  if [[ "$HAS_JQ" != "true" ]]; then
+    log_warn "jq がインストールされていません。MCP同期をスキップします。"
+    return 1
+  fi
+
+  # ソースの JSON 検証
+  if ! validate_json "$SOURCE_MCP"; then
+    log_error "MCP設定が不正なJSONです: $SOURCE_MCP"
+    return 1
+  fi
+
+  # mcpServers の存在チェック
+  local has_mcp_servers
+  has_mcp_servers=$(jq 'has("mcpServers")' "$SOURCE_MCP" 2>/dev/null || echo "false")
+
+  if [[ "$has_mcp_servers" != "true" ]]; then
+    log_info "mcpServers がありません。MCP同期をスキップします。"
+    return 1
+  fi
+
+  local claude_server_count
+  claude_server_count=$(jq '.mcpServers | length' "$SOURCE_MCP" 2>/dev/null || echo "0")
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    if [[ "$claude_server_count" -eq 0 ]]; then
+      log_info "[DRY-RUN] mcpServers が空です。既存の Cursor 設定は保持されます。"
+    else
+      log_info "[DRY-RUN] MCPマージ: $SOURCE_MCP -> $TARGET_MCP"
+    fi
+    return 0
+  fi
+
+  # Cursor 側の処理
+  local cursor_mcp='{}'
+
+  if [[ -f "$TARGET_MCP" ]]; then
+    if ! validate_json "$TARGET_MCP"; then
+      log_error "Cursor側のMCP設定が不正なJSONです: $TARGET_MCP"
+      return 1
+    fi
+
+    backup_file "$TARGET_MCP"
+    cursor_mcp=$(cat "$TARGET_MCP")
+  fi
+
+  # 空の mcpServers の場合は既存を保持
+  if [[ "$claude_server_count" -eq 0 ]]; then
+    log_info "mcpServers が空です。既存の Cursor 設定を保持します。"
+    return 0
+  fi
+
+  # Claude 固有フィールドを除去
+  local sanitized_source
+  sanitized_source=$(sanitize_mcp_for_cursor "$(cat "$SOURCE_MCP")")
+
+  # 一時ファイルに書き込み → 検証 → mv
+  local tmpfile
+  tmpfile=$(mktemp "${TARGET_MCP}.tmp.XXXXXX")
+
+  # マージ処理（既存優先）
+  jq -s '
+    .[0] as $cursor |
+    .[1] as $claude |
+    $cursor * {
+      mcpServers: (
+        ($cursor.mcpServers // {}) as $existing |
+        ($claude.mcpServers // {}) as $new |
+        $existing + ($new | to_entries | map(select(.key | in($existing) | not)) | from_entries)
+      )
+    }
+  ' <(echo "$cursor_mcp") <(echo "$sanitized_source") > "$tmpfile"
+
+  # 検証
+  if ! validate_json "$tmpfile"; then
+    log_error "マージ後のJSONが不正です。バックアップから復元します。"
+    rm -f "$tmpfile"
+    rollback_file "$TARGET_MCP"
+    return 1
+  fi
+
+  mkdir -p "$(dirname "$TARGET_MCP")"
+  mv "$tmpfile" "$TARGET_MCP"
+
+  log_success "MCPマージ完了: $TARGET_MCP"
+  return 0
 }
 
 # =============================================================================
@@ -379,6 +546,12 @@ show_help() {
 Usage: $0 [OPTIONS]
 
 Claude Code ドキュメントを Cursor に同期します。
+
+同期対象:
+  - docs/plans/ → .cursor/plans/ (symlink or copy)
+  - docs/skills/ → .cursor/skills/ (symlink or copy)
+  - docs/rules/ → .cursor/rules/ (format conversion)
+  - .mcp.json → .cursor/mcp.json (safe merge)
 
 OPTIONS:
   --yes, -y           非対話モード（デフォルト: バックアップ後上書き）
@@ -407,7 +580,7 @@ main() {
       shift
       continue
     fi
-    
+
     case "$1" in
       --help|-h)
         show_help
@@ -420,61 +593,67 @@ main() {
         ;;
     esac
   done
-  
+
   # オプションの妥当性チェック
   if ! validate_options; then
     exit 1
   fi
-  
+
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo " Cursor-Claude Compat - 同期ツール"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo ""
-  
+
   # 依存関係チェック
   check_dependencies
-  
+
   # バックアップディレクトリを初期化
   init_backup_dir ".cursor"
-  
+
   # 設定ファイル確認
   if ! load_config; then
     if [[ "$YES_MODE" == "true" ]]; then
-      log_error "設定ファイルが見つかりません。"
-      log_info "対話モードで初回セットアップを行ってください: $0"
-      exit 1
+      log_info "設定ファイルが見つかりません。自動検出で設定します。"
+      run_auto_setup
+    else
+      log_info "設定ファイルが見つかりません。対話モードでセットアップします。"
+      run_interactive_setup
     fi
-    log_info "設定ファイルが見つかりません。対話モードでセットアップします。"
-    run_interactive_setup
   elif ! validate_config; then
     if [[ "$YES_MODE" == "true" ]]; then
-      log_error "設定ファイルの参照先が無効です。"
-      log_info "対話モードで再セットアップを行ってください: $0"
-      exit 1
+      log_warn "設定ファイルの参照先が無効です。自動検出で再設定します。"
+      run_auto_setup
+    else
+      log_warn "設定ファイルの参照先が無効です。再セットアップします。"
+      run_interactive_setup
     fi
-    log_warn "設定ファイルの参照先が無効です。再セットアップします。"
-    run_interactive_setup
   else
     log_info "設定ファイルを読み込みました: $CONFIG_FILE"
+    # .mcp.json が未設定でも存在すれば自動検出
+    if [[ -z "$SOURCE_MCP" && -f ".mcp.json" ]]; then
+      SOURCE_MCP=".mcp.json"
+      log_info ".mcp.json を自動検出しました"
+    fi
   fi
-  
+
   echo ""
   log_info "同期を開始します..."
   echo ""
-  
+
   # 同期方式を決定
   local sync_method="symlink"
   if ! check_symlink_support; then
     sync_method="copy"
   fi
-  
+
   # 同期結果を追跡
   local sync_status="success"
   local plans_result="skipped"
   local skills_result="skipped"
   local rules_result="skipped"
-  
+  local mcp_result="skipped"
+
   # plans/skills を同期
   if [[ -n "$SOURCE_PLANS" && -d "$SOURCE_PLANS" ]]; then
     if sync_directory "$SOURCE_PLANS" "$TARGET_PLANS" "$sync_method"; then
@@ -484,7 +663,7 @@ main() {
       sync_status="partial"
     fi
   fi
-  
+
   if [[ -n "$SOURCE_SKILLS" && -d "$SOURCE_SKILLS" ]]; then
     if sync_directory "$SOURCE_SKILLS" "$TARGET_SKILLS" "$sync_method"; then
       skills_result="success"
@@ -493,7 +672,7 @@ main() {
       sync_status="partial"
     fi
   fi
-  
+
   # rules を変換同期
   if [[ -n "$SOURCE_RULES" && -d "$SOURCE_RULES" ]]; then
     if sync_rules "$SOURCE_RULES" "$TARGET_RULES"; then
@@ -503,12 +682,22 @@ main() {
       sync_status="partial"
     fi
   fi
-  
+
+  # MCP 同期
+  if [[ -n "$SOURCE_MCP" && -f "$SOURCE_MCP" ]]; then
+    if sync_mcp; then
+      mcp_result="success"
+    else
+      mcp_result="failed"
+      sync_status="partial"
+    fi
+  fi
+
   # 設定ファイルを更新（lastSyncを記録）
   if [[ "$DRY_RUN" != "true" ]]; then
     save_config "$SOURCE_PLANS" "$SOURCE_SKILLS" "$SOURCE_RULES" "$sync_method" "$sync_status"
   fi
-  
+
   echo ""
   log_success "同期が完了しました!"
   echo ""
@@ -516,6 +705,7 @@ main() {
   echo "  plans:  $plans_result"
   echo "  skills: $skills_result"
   echo "  rules:  $rules_result"
+  echo "  mcp:    $mcp_result"
   echo ""
 }
 
