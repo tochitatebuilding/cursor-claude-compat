@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 #
-# check-global.sh - Claude グローバル設定の同期状態をチェック
+# check-global.sh - Claude グローバル MCP 設定の同期状態をチェック
 #
 # チェック対象:
-#   - ~/.claude/CLAUDE.md と ~/.cursor/rules/claude-global.md の同期状態
-#   - ~/.claude/skills/ シンボリックリンクの状態
 #   - ~/.claude.json内mcpServers と ~/.cursor/mcp.json の差分
+#
+# Note: Cursor は ~/.claude/CLAUDE.md, ~/.claude/agents/, ~/.claude/skills/,
+#       ~/.claude/settings.json hooks をネイティブで読み取るため、
+#       それらのチェックは不要です。
 #
 set -euo pipefail
 
@@ -31,19 +33,14 @@ else
 fi
 
 # パスの定義
-CLAUDE_DIR="$(expand_path ~/.claude)"
 CLAUDE_JSON="$(expand_path ~/.claude.json)"
 CURSOR_DIR="$(expand_path ~/.cursor)"
 CONFIG_FILE="${CURSOR_DIR}/claude-compat-global.json"
 
 # 同期元
-SOURCE_CLAUDE_MD="${CLAUDE_DIR}/CLAUDE.md"
-SOURCE_SKILLS="${CLAUDE_DIR}/skills"
 SOURCE_MCP_CONFIG="${CLAUDE_JSON}"
 
 # 同期先
-TARGET_RULES="${CURSOR_DIR}/rules/claude-global.md"
-TARGET_SKILLS="${CURSOR_DIR}/skills-cursor/claude-skills"
 TARGET_MCP="${CURSOR_DIR}/mcp.json"
 
 # カウンター
@@ -57,36 +54,19 @@ load_global_config() {
   if [[ ! -f "$CONFIG_FILE" ]]; then
     return 1
   fi
-  
+
   if [[ "$HAS_JQ" == "true" ]] && validate_json "$CONFIG_FILE"; then
-    # カスタムパスがあれば読み込み
-    local custom_claude_md
-    custom_claude_md=$(json_get "$CONFIG_FILE" '.source.claudeMd')
-    [[ -n "$custom_claude_md" ]] && SOURCE_CLAUDE_MD="$custom_claude_md"
-    
-    local custom_skills
-    custom_skills=$(json_get "$CONFIG_FILE" '.source.skills')
-    [[ -n "$custom_skills" ]] && SOURCE_SKILLS="$custom_skills"
-    
     local custom_mcp
     custom_mcp=$(json_get "$CONFIG_FILE" '.source.mcpConfig')
     [[ -n "$custom_mcp" ]] && SOURCE_MCP_CONFIG="$custom_mcp"
-    
-    local custom_target_rules
-    custom_target_rules=$(json_get "$CONFIG_FILE" '.target.rules')
-    [[ -n "$custom_target_rules" ]] && TARGET_RULES="$custom_target_rules"
-    
-    local custom_target_skills
-    custom_target_skills=$(json_get "$CONFIG_FILE" '.target.skills')
-    [[ -n "$custom_target_skills" ]] && TARGET_SKILLS="$custom_target_skills"
-    
+
     local custom_target_mcp
     custom_target_mcp=$(json_get "$CONFIG_FILE" '.target.mcp')
     [[ -n "$custom_target_mcp" ]] && TARGET_MCP="$custom_target_mcp"
-    
+
     return 0
   fi
-  
+
   return 1
 }
 
@@ -94,118 +74,35 @@ load_global_config() {
 # チェック処理
 # =============================================================================
 
-# CLAUDE.md と rules/claude-global.md の比較
-check_rules() {
-  echo "[rules]"
-  
-  if [[ ! -f "$SOURCE_CLAUDE_MD" ]]; then
-    echo "  ℹ CLAUDE.md: 存在しない（スキップ）"
-    return 0
-  fi
-  
-  if [[ ! -f "$TARGET_RULES" ]]; then
-    echo "  ✗ claude-global.md: 未作成"
-    ((ISSUES++))
-    return 1
-  fi
-  
-  # frontmatter を除外して内容を比較
-  local source_content
-  local target_content
-  source_content=$(cat "$SOURCE_CLAUDE_MD")
-  target_content=$(extract_content_without_frontmatter "$TARGET_RULES")
-  
-  # 空白行の正規化（末尾の空白行を除去して比較）
-  source_content=$(echo "$source_content" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')
-  target_content=$(echo "$target_content" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')
-  
-  if [[ "$source_content" == "$target_content" ]]; then
-    echo "  ✓ claude-global.md: 同期済み"
-    return 0
-  else
-    echo "  ⚠ claude-global.md: 差分あり"
-    ((WARNINGS++))
-    return 1
-  fi
-}
-
-# skills シンボリックリンクのチェック
-check_skills() {
-  echo ""
-  echo "[skills]"
-  
-  if [[ ! -d "$SOURCE_SKILLS" ]]; then
-    echo "  ℹ skills: 存在しない（スキップ）"
-    return 0
-  fi
-  
-  if [[ ! -e "$TARGET_SKILLS" ]]; then
-    echo "  ✗ claude-skills: 未作成"
-    ((ISSUES++))
-    return 1
-  fi
-  
-  if [[ -L "$TARGET_SKILLS" ]]; then
-    # シンボリックリンクの場合
-    if [[ -e "$TARGET_SKILLS" ]]; then
-      # リンク先が存在する
-      local link_target
-      link_target=$(readlink -f "$TARGET_SKILLS" 2>/dev/null || readlink "$TARGET_SKILLS")
-      local source_real
-      source_real=$(realpath "$SOURCE_SKILLS" 2>/dev/null || echo "$SOURCE_SKILLS")
-      
-      if [[ "$link_target" == "$source_real" ]]; then
-        echo "  ✓ claude-skills: 同期済み（リンク正常）"
-        return 0
-      else
-        echo "  ⚠ claude-skills: リンク先が異なる"
-        echo "    現在: $link_target"
-        echo "    期待: $source_real"
-        ((WARNINGS++))
-        return 1
-      fi
-    else
-      echo "  ⚠ claude-skills: リンク切れ"
-      ((WARNINGS++))
-      return 1
-    fi
-  else
-    # ディレクトリの場合（コピーされている）
-    echo "  ℹ claude-skills: コピーで同期（シンボリックリンクではない）"
-    return 0
-  fi
-}
-
 # MCP設定の比較
 check_mcp() {
-  echo ""
   echo "[mcp]"
-  
+
   if [[ "$HAS_JQ" != "true" ]]; then
     echo "  ℹ mcp: jq がインストールされていません（スキップ）"
     return 0
   fi
-  
+
   if [[ ! -f "$SOURCE_MCP_CONFIG" ]]; then
     echo "  ℹ mcp: Claude MCP設定が見つかりません（スキップ）"
     return 0
   fi
-  
+
   if ! validate_json "$SOURCE_MCP_CONFIG"; then
     echo "  ✗ mcp: Claude MCP設定が不正なJSON"
     ((ISSUES++))
     return 1
   fi
-  
+
   # Claude側のmcpServersを取得
   local claude_servers
   claude_servers=$(jq -r '.mcpServers // {} | keys[]' "$SOURCE_MCP_CONFIG" 2>/dev/null || true)
-  
+
   if [[ -z "$claude_servers" ]]; then
     echo "  ℹ mcp: mcpServers がありません（スキップ）"
     return 0
   fi
-  
+
   if [[ ! -f "$TARGET_MCP" ]]; then
     echo "  ✗ mcp.json: 未作成"
     for server in $claude_servers; do
@@ -214,27 +111,27 @@ check_mcp() {
     ((ISSUES++))
     return 1
   fi
-  
+
   if ! validate_json "$TARGET_MCP"; then
     echo "  ✗ mcp.json: 不正なJSON"
     ((ISSUES++))
     return 1
   fi
-  
+
   # Cursor側のmcpServersを取得
   local cursor_servers
   cursor_servers=$(jq -r '.mcpServers // {} | keys[]' "$TARGET_MCP" 2>/dev/null || true)
-  
+
   local has_diff=false
-  
+
   # Claude側のサーバーをチェック
   for server in $claude_servers; do
     if echo "$cursor_servers" | grep -qx "$server"; then
-      # 両方に存在 - 内容の比較
+      # 両方に存在 - 内容の比較（type フィールドを除外して比較）
       local claude_config cursor_config
-      claude_config=$(jq -c ".mcpServers[\"$server\"]" "$SOURCE_MCP_CONFIG")
+      claude_config=$(jq -c ".mcpServers[\"$server\"] | del(.type, .envFile, .oauth, .disabledTools)" "$SOURCE_MCP_CONFIG")
       cursor_config=$(jq -c ".mcpServers[\"$server\"]" "$TARGET_MCP")
-      
+
       if [[ "$claude_config" == "$cursor_config" ]]; then
         echo "  ✓ mcpServers.$server: 同期済み"
       else
@@ -246,19 +143,19 @@ check_mcp() {
       has_diff=true
     fi
   done
-  
+
   # Cursor側のみに存在するサーバー
   for server in $cursor_servers; do
     if ! echo "$claude_servers" | grep -qx "$server"; then
       echo "  ℹ mcpServers.$server: Cursor側のみ（正常）"
     fi
   done
-  
+
   if [[ "$has_diff" == "true" ]]; then
     ((WARNINGS++))
     return 1
   fi
-  
+
   return 0
 }
 
@@ -266,27 +163,27 @@ check_mcp() {
 check_config() {
   echo ""
   echo "[設定ファイル]"
-  
+
   if [[ ! -f "$CONFIG_FILE" ]]; then
     echo "  ℹ claude-compat-global.json: 未作成（初回同期が必要）"
     return 0
   fi
-  
+
   if [[ "$HAS_JQ" != "true" ]]; then
     echo "  ℹ 設定ファイルの検証にはjqが必要です"
     return 0
   fi
-  
+
   if ! validate_json "$CONFIG_FILE"; then
     echo "  ✗ claude-compat-global.json: 不正なJSON"
     ((ISSUES++))
     return 1
   fi
-  
+
   local last_sync last_status
   last_sync=$(json_get "$CONFIG_FILE" '.lastSync')
   last_status=$(json_get "$CONFIG_FILE" '.lastSyncStatus')
-  
+
   echo "  ✓ claude-compat-global.json: 有効"
   if [[ -n "$last_sync" ]]; then
     echo "    最終同期: $last_sync"
@@ -294,7 +191,7 @@ check_config() {
   if [[ -n "$last_status" ]]; then
     echo "    ステータス: $last_status"
   fi
-  
+
   return 0
 }
 
@@ -305,12 +202,17 @@ show_help() {
   cat << EOF
 Usage: $0 [OPTIONS]
 
-Claude グローバル設定の同期状態をチェックします。
+Claude グローバル MCP 設定の同期状態をチェックします。
 
 チェック対象:
-  - ~/.claude/CLAUDE.md と ~/.cursor/rules/claude-global.md
-  - ~/.claude/skills/ シンボリックリンク
   - ~/.claude.json内mcpServers と ~/.cursor/mcp.json
+
+注意:
+  Cursor は以下をネイティブで読み取るため、チェックは不要です:
+  - ~/.claude/CLAUDE.md
+  - ~/.claude/agents/
+  - ~/.claude/skills/
+  - ~/.claude/settings.json (hooks)
 
 OPTIONS:
   --help, -h    ヘルプ表示
@@ -340,33 +242,31 @@ main() {
         ;;
     esac
   done
-  
+
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo " Cursor-Claude Compat - グローバル差分チェック"
+  echo " Cursor-Claude Compat - グローバル MCP 差分チェック"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo ""
-  
+
   # 依存関係チェック（警告のみ）
   if command -v jq &>/dev/null; then
     HAS_JQ=true
   else
     HAS_JQ=false
   fi
-  
+
   # 設定ファイル読み込み
   load_global_config || true
-  
+
   # 各項目をチェック
-  check_rules
-  check_skills
   check_mcp
   check_config
-  
+
   # 結果サマリー
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  
+
   if [[ $ISSUES -eq 0 && $WARNINGS -eq 0 ]]; then
     log_success "すべて同期済みです"
   else
@@ -379,10 +279,10 @@ main() {
     echo ""
     log_info "同期を実行するには: sync-global.sh"
   fi
-  
+
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo ""
-  
+
   # 終了コード
   if [[ $ISSUES -gt 0 ]]; then
     exit 2

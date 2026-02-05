@@ -2,6 +2,8 @@
 
 設定ファイルとオプションの詳細リファレンスです。
 
+> **Note**: Cursor は `~/.claude/CLAUDE.md`、`~/.claude/agents/`、`~/.claude/skills/`、`~/.claude/settings.json` をネイティブに読み込むようになりました。これらはグローバル同期の対象外です。グローバル同期は MCP 設定（`~/.claude.json` → `~/.cursor/mcp.json`）のみを処理します。
+
 ## 設定ファイル
 
 ### プロジェクト設定: `.cursor/claude-compat.json`
@@ -14,19 +16,23 @@
   "source": {
     "plans": "docs/plans",
     "skills": "docs/skills",
-    "rules": "docs/rules"
+    "rules": "docs/rules",
+    "mcp": ".mcp.json"
   },
   "target": {
     "plans": ".cursor/plans",
     "skills": ".cursor/skills",
-    "rules": ".cursor/rules"
+    "rules": ".cursor/rules",
+    "mcp": ".cursor/mcp.json"
   },
   "syncMethod": {
     "plans": "symlink",
     "skills": "symlink",
-    "rules": "convert"
+    "rules": "convert",
+    "mcp": "merge"
   },
-  "lastSync": "2026-02-03T12:00:00+09:00"
+  "lastSync": "2026-02-03T12:00:00+09:00",
+  "lastSyncStatus": "success"
 }
 ```
 
@@ -37,8 +43,9 @@
 | `version` | 設定ファイルのバージョン |
 | `source.*` | Claude Code用のソースディレクトリ |
 | `target.*` | Cursor用の同期先ディレクトリ |
-| `syncMethod.*` | 同期方式（`symlink`, `copy`, `convert`） |
+| `syncMethod.*` | 同期方式（`symlink`, `copy`, `convert`, `merge`） |
 | `lastSync` | 最終同期日時（ISO 8601形式） |
+| `lastSyncStatus` | 最終同期のステータス（`success`, `failed`） |
 
 ### 同期方式
 
@@ -46,7 +53,7 @@
 |------|------|------|
 | `symlink` | シンボリックリンクを作成 | plans, skills（デフォルト） |
 | `copy` | ファイルをコピー | symlinkが使えない環境 |
-| `convert` | 形式変換してコピー | rules（常にこの方式） |
+| `convert` | 形式変換してコピー | rules（プロジェクト同期で使用） |
 
 ## コマンドラインオプション
 
@@ -107,6 +114,39 @@ Claude形式（純粋Markdown）から Cursor形式（.mdc）への変換時に�
 #### alwaysApply
 
 デフォルトは `false`。変更が必要な場合は、変換後のファイルを手動で編集してください。
+
+### ルールのサブディレクトリ対応
+
+ルール同期はネストされたサブディレクトリを再帰的に処理します。ソースディレクトリ内のディレクトリ構造がそのまま同期先に反映されます。
+
+## MCP設定の同期
+
+### グローバル同期
+
+`~/.claude.json` → `~/.cursor/mcp.json` へ MCP サーバー設定をマージします。
+
+### プロジェクト同期
+
+`.mcp.json` → `.cursor/mcp.json` へ MCP サーバー設定をマージします（設定ファイルの `mcp` フィールドで制御）。
+
+### Claude固有フィールドの自動除去
+
+MCP設定の同期時、以下の Claude 固有フィールドは Cursor と互換性がないため自動的に除去されます:
+
+| フィールド | 説明 |
+|-----------|------|
+| `type` | サーバータイプの指定（Claude固有） |
+| `envFile` | 環境変数ファイルの指定 |
+| `oauth` | OAuth認証設定 |
+| `disabledTools` | 無効化ツールの指定 |
+
+### 空の mcpServers の扱い
+
+ソースの `mcpServers` が空オブジェクト（`{}`）の場合、既存の Cursor 側の MCP 設定はそのまま保持されます。
+
+### アトミック書き込み
+
+MCP設定ファイルの更新は、一時ファイルへの書き込み → JSON バリデーション → 移動（mv）の順で行われ、書き込み途中の不正な状態を防ぎます。
 
 ## VSCodeタスク
 

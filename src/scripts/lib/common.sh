@@ -419,10 +419,10 @@ validate_json() {
     return 1
   fi
   
-  if [[ ! -f "$file" ]]; then
+  if [[ ! -f "$file" || ! -s "$file" ]]; then
     return 1
   fi
-  
+
   if jq empty "$file" 2>/dev/null; then
     return 0
   else
@@ -449,6 +449,71 @@ json_get() {
   else
     echo "$default"
   fi
+}
+
+# =============================================================================
+# YAML エスケープ
+# =============================================================================
+
+# YAML の description 値として安全な文字列に変換
+# 特殊文字（:, ", #, {, }）を含む場合はダブルクォートで囲む
+yaml_escape() {
+  local value="$1"
+
+  # 特殊文字が含まれる場合はダブルクォートで囲む
+  if [[ "$value" =~ [\:\"\#\{\}\[\]\|\>\<\&\*\!\%\@\`] ]] || \
+     [[ "$value" =~ ^[[:space:]] ]] || \
+     [[ "$value" =~ [[:space:]]$ ]]; then
+    # 内部のダブルクォートをエスケープ
+    value="${value//\\/\\\\}"
+    value="${value//\"/\\\"}"
+    echo "\"$value\""
+  else
+    echo "$value"
+  fi
+}
+
+# =============================================================================
+# MCP サニタイズ
+# =============================================================================
+
+# Claude 固有フィールドを除去して Cursor 互換の MCP JSON を生成
+# 除去するフィールド: type, envFile, oauth, disabledTools
+sanitize_mcp_for_cursor() {
+  local json="$1"
+
+  if [[ "$HAS_JQ" != "true" ]]; then
+    echo "$json"
+    return
+  fi
+
+  # 除去対象フィールドの検出と警告
+  local has_envfile has_oauth has_disabled_tools
+  has_envfile=$(echo "$json" | jq '[.mcpServers // {} | to_entries[] | select(.value.envFile != null)] | length' 2>/dev/null || echo "0")
+  has_oauth=$(echo "$json" | jq '[.mcpServers // {} | to_entries[] | select(.value.oauth != null)] | length' 2>/dev/null || echo "0")
+  has_disabled_tools=$(echo "$json" | jq '[.mcpServers // {} | to_entries[] | select(.value.disabledTools != null)] | length' 2>/dev/null || echo "0")
+
+  # Note: log_warn to stderr to avoid corrupting JSON output captured by $()
+  if [[ "$has_envfile" -gt 0 ]]; then
+    log_warn "envFile フィールドは Cursor では動作しません（${has_envfile} サーバーから除去）" >&2
+  fi
+  if [[ "$has_oauth" -gt 0 ]]; then
+    log_warn "oauth フィールドは Cursor では動作しません（${has_oauth} サーバーから除去）" >&2
+  fi
+  if [[ "$has_disabled_tools" -gt 0 ]]; then
+    log_warn "disabledTools フィールドは Cursor では動作しません（${has_disabled_tools} サーバーから除去）" >&2
+  fi
+
+  # type, envFile, oauth, disabledTools を除去
+  echo "$json" | jq '
+    if .mcpServers then
+      .mcpServers |= with_entries(
+        .value |= del(.type, .envFile, .oauth, .disabledTools)
+      )
+    else
+      .
+    end
+  '
 }
 
 # =============================================================================

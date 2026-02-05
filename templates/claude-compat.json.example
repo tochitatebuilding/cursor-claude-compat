@@ -3,17 +3,20 @@
   "source": {
     "plans": "docs/plans",
     "skills": "docs/skills",
-    "rules": "docs/rules"
+    "rules": "docs/rules",
+    "mcp": ".mcp.json"
   },
   "target": {
     "plans": ".cursor/plans",
     "skills": ".cursor/skills",
-    "rules": ".cursor/rules"
+    "rules": ".cursor/rules",
+    "mcp": ".cursor/mcp.json"
   },
   "syncMethod": {
     "plans": "symlink",
     "skills": "symlink",
-    "rules": "convert"
+    "rules": "convert",
+    "mcp": "merge"
   },
   "lastSync": "2026-02-03T12:00:00+09:00"
 }
