@@ -201,6 +201,9 @@ main() {
   echo ""
   echo "  - Claude側の設定 (~/.claude/, ~/.claude.json) は変更されていません。"
   echo ""
+  echo "  - Cursor は ~/.claude/CLAUDE.md, ~/.claude/skills/, ~/.claude/agents/ を"
+  echo "    ネイティブで読み取ります。グローバルルール/スキルの同期は不要です。"
+  echo ""
 }
 
 main "$@"
