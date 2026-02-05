@@ -61,6 +61,10 @@ load_global_config() {
     custom_mcp=$(json_get "$CONFIG_FILE" '.source.mcpConfig')
     [[ -n "$custom_mcp" ]] && SOURCE_MCP_CONFIG="$custom_mcp"
 
+    local custom_target_mcp
+    custom_target_mcp=$(json_get "$CONFIG_FILE" '.target.mcp')
+    [[ -n "$custom_target_mcp" ]] && TARGET_MCP="$custom_target_mcp"
+
     return 0
   fi
 
@@ -463,6 +467,7 @@ main() {
     log_success "MCP 同期が完了しました!"
   else
     log_warn "MCP 同期がスキップされました"
+    exit 1
   fi
 }
 
