@@ -14,7 +14,7 @@
 
 ## 概要
 
-Cursor-Claude Compatは、Claude CodeとCursorの間でプロジェクト設定、スキル、ルール、プランをシームレスに同期するためのツールキットです。複数のAIコーディングアシスタントを使用する際に、開発者が一貫性を保つことを支援します。
+Cursor-Claude Compatは、Claude CodeとCursorの間でプロジェクト設定、スキル、ルール、プラン、MCP設定をシームレスに同期するためのツールキットです。複数のAIコーディングアシスタントを使用する際に、開発者が一貫性を保つことを支援します。
 
 ## なぜOSS化するのか？
 
@@ -38,9 +38,9 @@ Cursor-Claude Compatは、Claude CodeとCursorの間でプロジェクト設定�
 
 ### グローバル設定の同期
 
-- `~/.claude/CLAUDE.md` → `~/.cursor/rules/claude-global.md`
-- `~/.claude/skills/` → `~/.cursor/skills-cursor/claude-skills/`
-- `~/.claude.json`の`mcpServers` → `~/.cursor/mcp.json`（安全マージ）
+- `~/.claude.json`の`mcpServers` → `~/.cursor/mcp.json`（安全マージ、Claude固有フィールドの除去）
+
+> **注意**: Cursorは `~/.claude/CLAUDE.md`、`~/.claude/agents/`、`~/.claude/skills/`、`~/.claude/settings.json` フックをネイティブに読み取ります -- これらの同期は不要です。
 
 ## クイックスタート
 
@@ -82,14 +82,17 @@ Claude Codeのグローバル設定をCursorに同期：
 | plans | `docs/plans/*.md` | `.cursor/plans/*.md` | シンボリックリンク or コピー |
 | skills | `docs/skills/*.md` | `.cursor/skills/*.md` | シンボリックリンク or コピー |
 | rules | `docs/rules/*.md` | `.cursor/rules/*.md` | 形式変換コピー |
+| mcp | `.mcp.json` | `.cursor/mcp.json` | 安全マージ |
 
 ### グローバル同期
 
 | 対象 | Claude形式 | Cursor形式 | 同期方法 |
 |------|------------|------------|----------|
-| rules | `~/.claude/CLAUDE.md` | `~/.cursor/rules/claude-global.md` | frontmatter追加 |
-| skills | `~/.claude/skills/` | `~/.cursor/skills-cursor/claude-skills/` | シンボリックリンク or コピー |
-| mcp | `~/.claude.json`の`mcpServers` | `~/.cursor/mcp.json` | 安全マージ（既存が優先） |
+| mcp | `~/.claude.json`の`mcpServers` | `~/.cursor/mcp.json` | 安全マージ（既存が優先、Claude固有フィールド除去） |
+
+> **注意**: Cursorは `~/.claude/CLAUDE.md`、`~/.claude/agents/`、`~/.claude/skills/`、`~/.claude/settings.json` をネイティブにサポートしています。これらの同期は不要になりました。
+>
+> Claude固有フィールド（`type`、`envFile`、`oauth`、`disabledTools`）はMCP設定マージ時に自動的に除去されます。
 
 ## コマンドラインオプション
 
@@ -145,17 +148,20 @@ cursor-claude-compat/
   "source": {
     "plans": "docs/plans",
     "skills": "docs/skills",
-    "rules": "docs/rules"
+    "rules": "docs/rules",
+    "mcp": ".mcp.json"
   },
   "target": {
     "plans": ".cursor/plans",
     "skills": ".cursor/skills",
-    "rules": ".cursor/rules"
+    "rules": ".cursor/rules",
+    "mcp": ".cursor/mcp.json"
   },
   "syncMethod": {
     "plans": "symlink",
     "skills": "symlink",
-    "rules": "convert"
+    "rules": "convert",
+    "mcp": "merge"
   },
   "lastSync": "2026-02-03T12:00:00+09:00",
   "lastSyncStatus": "success"
@@ -170,13 +176,9 @@ cursor-claude-compat/
 {
   "version": "1",
   "source": {
-    "claudeMd": "/home/user/.claude/CLAUDE.md",
-    "skills": "/home/user/.claude/skills",
     "mcpConfig": "/home/user/.claude.json"
   },
   "target": {
-    "rules": "/home/user/.cursor/rules/claude-global.md",
-    "skills": "/home/user/.cursor/skills-cursor/claude-skills",
     "mcp": "/home/user/.cursor/mcp.json"
   },
   "lastSync": "2026-02-03T12:00:00+09:00",

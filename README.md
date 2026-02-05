@@ -14,7 +14,7 @@
 
 ## Overview
 
-Cursor-Claude Compat is a toolkit that enables seamless synchronization of project configurations, skills, rules, and plans between Claude Code and Cursor. It helps developers maintain consistency when working with both AI coding assistants.
+Cursor-Claude Compat is a toolkit that enables seamless synchronization of project configurations, skills, rules, plans, and MCP settings between Claude Code and Cursor. It helps developers maintain consistency when working with both AI coding assistants.
 
 ## Why OSS?
 
@@ -38,9 +38,9 @@ We believe that open collaboration accelerates innovation, especially in the rap
 
 ### Global Configuration Synchronization
 
-- `~/.claude/CLAUDE.md` → `~/.cursor/rules/claude-global.md`
-- `~/.claude/skills/` → `~/.cursor/skills-cursor/claude-skills/`
-- `~/.claude.json` `mcpServers` → `~/.cursor/mcp.json` (safe merge)
+- `~/.claude.json` `mcpServers` → `~/.cursor/mcp.json` (safe merge, with Claude-specific field removal)
+
+> **Note**: Cursor natively reads `~/.claude/CLAUDE.md`, `~/.claude/agents/`, `~/.claude/skills/`, and `~/.claude/settings.json` hooks -- no synchronization needed for these.
 
 ## Quick Start
 
@@ -82,14 +82,17 @@ Sync Claude Code's global configuration to Cursor:
 | plans | `docs/plans/*.md` | `.cursor/plans/*.md` | Symbolic link or copy |
 | skills | `docs/skills/*.md` | `.cursor/skills/*.md` | Symbolic link or copy |
 | rules | `docs/rules/*.md` | `.cursor/rules/*.md` | Format conversion copy |
+| mcp | `.mcp.json` | `.cursor/mcp.json` | Safe merge |
 
 ### Global Synchronization
 
 | Target | Claude Format | Cursor Format | Sync Method |
 |--------|---------------|---------------|-------------|
-| rules | `~/.claude/CLAUDE.md` | `~/.cursor/rules/claude-global.md` | Frontmatter addition |
-| skills | `~/.claude/skills/` | `~/.cursor/skills-cursor/claude-skills/` | Symbolic link or copy |
-| mcp | `~/.claude.json` `mcpServers` | `~/.cursor/mcp.json` | Safe merge (existing takes priority) |
+| mcp | `~/.claude.json` `mcpServers` | `~/.cursor/mcp.json` | Safe merge (existing takes priority, Claude-specific fields removed) |
+
+> **Note**: Cursor natively supports `~/.claude/CLAUDE.md`, `~/.claude/agents/`, `~/.claude/skills/`, and `~/.claude/settings.json`. These no longer require synchronization.
+>
+> Claude-specific fields (`type`, `envFile`, `oauth`, `disabledTools`) are automatically removed during MCP config merge.
 
 ## Command-Line Options
 
@@ -145,17 +148,20 @@ cursor-claude-compat/
   "source": {
     "plans": "docs/plans",
     "skills": "docs/skills",
-    "rules": "docs/rules"
+    "rules": "docs/rules",
+    "mcp": ".mcp.json"
   },
   "target": {
     "plans": ".cursor/plans",
     "skills": ".cursor/skills",
-    "rules": ".cursor/rules"
+    "rules": ".cursor/rules",
+    "mcp": ".cursor/mcp.json"
   },
   "syncMethod": {
     "plans": "symlink",
     "skills": "symlink",
-    "rules": "convert"
+    "rules": "convert",
+    "mcp": "merge"
   },
   "lastSync": "2026-02-03T12:00:00+09:00",
   "lastSyncStatus": "success"
@@ -170,13 +176,9 @@ cursor-claude-compat/
 {
   "version": "1",
   "source": {
-    "claudeMd": "/home/user/.claude/CLAUDE.md",
-    "skills": "/home/user/.claude/skills",
     "mcpConfig": "/home/user/.claude.json"
   },
   "target": {
-    "rules": "/home/user/.cursor/rules/claude-global.md",
-    "skills": "/home/user/.cursor/skills-cursor/claude-skills",
     "mcp": "/home/user/.cursor/mcp.json"
   },
   "lastSync": "2026-02-03T12:00:00+09:00",

@@ -145,6 +145,65 @@ chmod +x installer/install.sh
   fi
   ```
 
+## MCP設定関連
+
+### Claude固有フィールドが原因でCursorのMCPサーバーが動作しない
+
+**症状**: MCP同期後、Cursorで MCP サーバーに接続できない
+
+**原因**: Claude 固有のフィールド（`type`, `envFile`, `oauth`, `disabledTools`）が残っている可能性
+
+**解決策**:
+1. 同期を再実行すると、これらのフィールドは自動的に除去されます:
+   ```bash
+   ~/.cursor/skills-cursor/sync-claude-docs/sync-global.sh
+   ```
+2. 手動で確認する場合:
+   ```bash
+   cat ~/.cursor/mcp.json | jq '.mcpServers | to_entries[] | select(.value.type != null or .value.envFile != null)'
+   ```
+   上記コマンドで出力がなければ、Claude固有フィールドは除去済みです。
+
+### 空の mcpServers で既存設定が消える
+
+**症状**: ソース側の `mcpServers` が空だったのに、Cursor 側の既存MCP設定が消えた
+
+**原因**: 通常は発生しません。`mcpServers: {}` の場合、既存の Cursor 設定は保持されます。
+
+**解決策**:
+1. バックアップから復元:
+   ```bash
+   ls ~/.cursor/.claude-compat-backup/
+   cp ~/.cursor/.claude-compat-backup/mcp.json.YYYYMMDD_HHMMSS ~/.cursor/mcp.json
+   ```
+2. 再同期を実行
+
+### MCP設定のマージに失敗する
+
+**症状**: MCP同期時にJSONパースエラーが発生する
+
+**原因**: ソースまたはターゲットのJSONファイルが不正な形式
+
+**解決策**:
+1. ソースファイルのJSON形式を確認:
+   ```bash
+   # グローバル
+   jq . ~/.claude.json
+   # プロジェクト
+   jq . .mcp.json
+   ```
+2. ターゲットファイルの形式を確認:
+   ```bash
+   jq . ~/.cursor/mcp.json
+   ```
+3. ファイルが不正な場合、修正するか削除して再同期:
+   ```bash
+   rm ~/.cursor/mcp.json
+   ~/.cursor/skills-cursor/sync-claude-docs/sync-global.sh
+   ```
+
+> **Note**: MCP設定の書き込みはアトミック（一時ファイル → バリデーション → 移動）で行われるため、書き込み途中の破損は通常発生しません。
+
 ## その他
 
 ### jqがインストールされていない
