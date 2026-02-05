@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-02-05
+
+
+### Changes since v1.0.0
+
+### Other
+- feat: MCP sync support and Cursor native Claude compatibility (#2) (943a226)
+- Merge pull request #1 from tochitatebuilding/chore/update-changelog-1.0.0 (7d72c7d)
+- chore: update CHANGELOG.md for v1.0.0 (d1cd8c7)
+
 ## [1.0.0] - 2026-02-03
 
 
@@ -35,5 +45,6 @@ Initial release of Cursor-Claude Compat.
 - Installer and uninstaller scripts
 - Documentation and contribution guidelines
 
-[Unreleased]: https://github.com/tochitatebuilding/cursor-claude-compat/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/tochitatebuilding/cursor-claude-compat/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/tochitatebuilding/cursor-claude-compat/releases/tag/v1.1.0
 [1.0.0]: https://github.com/tochitatebuilding/cursor-claude-compat/releases/tag/v1.0.0
